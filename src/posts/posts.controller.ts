@@ -1,5 +1,4 @@
 import {
-    BadRequestException,
     Body,
     Controller,
     Get,
@@ -22,48 +21,13 @@ import {
     FeedQueryDto,
 } from "@/posts/posts.dtos"
 
-const logDomainEvent = (
-    eventName: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[event:${eventName}]`, payload)
-}
-
-const fakeSendNotification = (
-    type: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[notify:${type}]`, payload)
-}
-
-const fakeRecomputeSomething = (postId: number) => {
-    console.log(`[recompute] postId=${postId}`)
-}
-
 @Controller("api/posts")
 export class PostsController {
     constructor(private readonly postsService: PostsService) {}
 
     @Post()
     async create(@Body() body: CreatePostDto) {
-        if (body.title.length < 3 || body.title.length > 120) {
-            throw new BadRequestException(
-                "Title length must be between 3 and 120",
-            )
-        }
-
-        if (!body.imageUrl.startsWith("http")) {
-            throw new BadRequestException("Image URL must start with http")
-        }
-
-        const created = await this.postsService.create(body)
-
-        logDomainEvent("post.created", {
-            postId: created.id,
-            title: created.title,
-        })
-        fakeSendNotification("post", { postId: created.id })
-        fakeRecomputeSomething(created.id)
+        const created = await this.postsService.createPost(body)
 
         return {
             ok: true,
@@ -160,8 +124,8 @@ export class PostsController {
 
         return {
             mode,
-            count: sorted.length,
-            rows: sorted,
+            count: rows.length,
+            rows,
         }
     }
 
@@ -192,8 +156,8 @@ export class PostsController {
         )
 
         return {
-            total_comments: entities.length,
-            comments: entities,
+            total_comments: comments.length,
+            comments,
         }
     }
 

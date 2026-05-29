@@ -1,34 +1,26 @@
-import { Injectable } from "@nestjs/common"
-import { CommentEntity } from "@/posts/entities/comment.entity"
-import { LikeEntity } from "@/posts/entities/like.entity"
-import { PostEntity } from "@/posts/entities/post.entity"
-import { CreatePostDto } from "@/posts/posts.dtos"
-import { PrismaService } from "@/prisma/prisma.service"
-
-const logDomainEvent = (
-    eventName: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[event:${eventName}]`, payload)
-}
-
-const fakeSendNotification = (
-    type: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[notify:${type}]`, payload)
-}
-
-const fakeRecomputeSomething = (postId: number) => {
-    console.log(`[recompute] postId=${postId}`)
-}
+import {
+    BadRequestException,
+    Injectable,
+    NotFoundException,
+} from "@nestjs/common"
+import {
+    AddLikeDto,
+    CreateCommentDto,
+    CreatePostDto,
+    FeedQueryDto,
+} from "@/posts/posts.dtos"
+import { PostsMapper } from "@/posts/posts.mapper"
+import { FeedMode } from "@/posts/feed-ranking.service"
+import { FeedService } from "@/posts/feed.service"
+import { ModerationService } from "@/posts/moderation.service"
+import { PostsRepository } from "@/posts/posts.repository"
 
 @Injectable()
 export class PostsService {
     constructor(
         private readonly repository: PostsRepository,
         private readonly moderationService: ModerationService,
-        private readonly rankingService: FeedRankingService,
+        private readonly feedService: FeedService,
     ) {}
 
     async createPost(data: CreatePostDto) {
@@ -49,38 +41,65 @@ export class PostsService {
             include: { comments: true, likes: true },
         })
 
-        return posts.map((p) =>
-            PostEntity.create({
-                ...p,
-                comments: p.comments.map((c) => CommentEntity.create(c)),
-                likes: p.likes.map((l) => LikeEntity.create(l)),
-            }),
-        )
+        return this.feedService.getFeed(posts, mode)
     }
 
-    async findById(id: number) {
-        const post = await this.prisma.post.findUnique({
-            where: { id },
-            include: { comments: true, likes: true },
-        })
-
+    async getComments(postId: number) {
+        const post = await this.findById(postId)
         if (!post) {
-            return null
+            throw new NotFoundException({ ok: false, error: "Post not found" })
         }
 
-        return PostEntity.create({
-            ...post,
-            comments: post.comments.map((c) => CommentEntity.create(c)),
-            likes: post.likes.map((l) => LikeEntity.create(l)),
+        const comments = await this.repository.findCommentsByPostId(postId)
+
+        return {
+            total_comments: comments.length,
+            comments: comments.map((comment) =>
+                PostsMapper.toCommentEntity(comment, {
+                    blocked: false,
+                    reason: "existing",
+                }),
+            ),
+        }
+    }
+
+        if (!post) {
+            throw new NotFoundException("Post not found")
+        }
+
+
+        const moderation = this.moderationService.review(data.content)
+
+        if (moderation.blocked) {
+            throw new BadRequestException({ ok: false, error: "Comment blocked by moderation" })
+        }
+
+        const created = await this.repository.createComment(
+            postId,
+            data,
+            "controller",
+        )
+
+        this.logDomainEvent("comment.created", {
+            postId,
+            commentId: created.id,
         })
     }
 
-    async createComment(post: PostEntity, content: string) {
-        const comment = await this.prisma.comment.create({
-            data: {
-                postId: post.id,
-                content: content,
-            },
+    async addLike(postId: number, data: AddLikeDto) {
+        const post = await this.findById(postId)
+        if (!post) {
+            throw new NotFoundException({ ok: false, error: "Post not found" })
+        }
+
+        const weight = data.weight || 1
+
+        const like = await this.repository.addLike(postId, data, "controller")
+
+        this.logDomainEvent("like.created", { postId, likeId: like.id })
+        this.fakeSendNotification("like", {
+            postId,
+            reactionType: like.reactionType,
         })
 
         return CommentEntity.create(comment)

@@ -8,15 +8,17 @@ import { PrismaModule } from "@/prisma/prisma.module"
 import { PostsRepository } from "@/posts/posts.repository"
 import { ModerationService } from "@/posts/moderation.service"
 import { FeedRankingService } from "@/posts/feed-ranking.service"
+import { FeedService } from "@/posts/feed.service"
 
 @Module({
     imports: [PrismaModule],
     controllers: [PostsController],
     providers: [
         PostsService,
-        PostEventsListener,
-        NotificationService,
-        RecomputationService,
+        PostsRepository,
+        ModerationService,
+        FeedRankingService,
+        FeedService,
     ],
 })
 export class PostsModule {}

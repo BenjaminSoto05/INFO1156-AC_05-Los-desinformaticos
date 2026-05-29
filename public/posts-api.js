@@ -22,10 +22,22 @@ const assertOk = async (response) => {
     }
 
     const payload = await parseResponse(response)
-    const message =
-        typeof payload === "object" && payload && "message" in payload
-            ? String(payload.message)
-            : `Error HTTP ${response.status}`
+    let message = `Error HTTP ${response.status}`
+
+    if (typeof payload === "object" && payload && (payload.error || payload.message)) {
+        message = String(payload.error || payload.message)
+    }
+
+    // If there are validation details, append the first constraint message
+    if (typeof payload === "object" && payload && Array.isArray(payload.details) && payload.details.length > 0) {
+        const first = payload.details[0]
+        if (first && first.constraints) {
+            const constraints = Object.values(first.constraints)
+            if (constraints.length > 0) {
+                message += `: ${constraints[0]}`
+            }
+        }
+    }
 
     throw new Error(message)
 }

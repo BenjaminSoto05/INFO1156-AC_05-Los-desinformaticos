@@ -86,4 +86,122 @@ describe("Posts integration", () => {
             "Comentario normal y valido",
         )
     })
+
+    it("rejects invalid request bodies via DTO validation", async () => {
+        const createResponse = await request(app.getHttpServer())
+            .post("/api/posts")
+            .send({
+                title: "Post de validacion",
+                description: "Validacion de cuerpo basada en DTO.",
+                imageUrl: "https://example.com/post-validate.jpg",
+            })
+            .expect(201)
+
+        const postId = createResponse.body.payload.id
+
+        const shortComment = await request(app.getHttpServer())
+            .post(`/api/posts/${postId}/comments`)
+            .send({ content: "a" })
+            .expect(400)
+
+        expect(shortComment.body.ok).toBe(false)
+        expect(shortComment.body.error).toBe("Validation failed")
+        expect(shortComment.body.details).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ property: "content" }),
+            ]),
+        )
+
+        const invalidLike = await request(app.getHttpServer())
+            .post(`/api/posts/${postId}/likes`)
+            .send({ reactionType: "like", weight: 0 })
+            .expect(400)
+
+        expect(invalidLike.body.ok).toBe(false)
+        expect(invalidLike.body.error).toBe("Validation failed")
+        expect(invalidLike.body.details).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ property: "weight" }),
+            ]),
+        )
+    })
+
+    it("orders feed by mostLiked", async () => {
+        const firstPost = await request(app.getHttpServer())
+            .post("/api/posts")
+            .send({
+                title: "Post con likes",
+                description: "Este post tendra mas likes que el otro.",
+                imageUrl: "https://example.com/post-like-a.jpg",
+            })
+            .expect(201)
+
+        const secondPost = await request(app.getHttpServer())
+            .post("/api/posts")
+            .send({
+                title: "Post con pocos likes",
+                description: "Este post tendra menos likes.",
+                imageUrl: "https://example.com/post-like-b.jpg",
+            })
+            .expect(201)
+
+        const firstId = firstPost.body.payload.id
+        const secondId = secondPost.body.payload.id
+
+        await request(app.getHttpServer())
+            .post(`/api/posts/${firstId}/likes`)
+            .send({ reactionType: "like", weight: 2 })
+            .expect(201)
+
+        await request(app.getHttpServer())
+            .post(`/api/posts/${firstId}/likes`)
+            .send({ reactionType: "clap", weight: 1 })
+            .expect(201)
+
+        await request(app.getHttpServer())
+            .post(`/api/posts/${secondId}/likes`)
+            .send({ reactionType: "like", weight: 1 })
+            .expect(201)
+
+        const feedResponse = await request(app.getHttpServer())
+            .get("/api/posts/feed?mode=mostLiked")
+            .expect(200)
+
+        expect(feedResponse.body.mode).toBe("mostLiked")
+        expect(feedResponse.body.rows[0].id).toBe(firstId)
+        expect(feedResponse.body.rows[0].likesCount).toBe(3)
+        expect(feedResponse.body.rows[1].id).toBe(secondId)
+    })
+
+    it("returns relevance mode with derived fields", async () => {
+        const createResponse = await request(app.getHttpServer())
+            .post("/api/posts")
+            .send({
+                title: "Post relevancia",
+                description: "Texto suficiente para validar modo relevance.",
+                imageUrl: "https://example.com/post-relevance.jpg",
+            })
+            .expect(201)
+
+        const postId = createResponse.body.payload.id
+
+        await request(app.getHttpServer())
+            .post(`/api/posts/${postId}/likes`)
+            .send({ reactionType: "fire", weight: 2 })
+            .expect(201)
+
+        const feedResponse = await request(app.getHttpServer())
+            .get("/api/posts/feed?mode=relevance")
+            .expect(200)
+
+        expect(feedResponse.body.mode).toBe("relevance")
+        expect(feedResponse.body.rows[0]).toEqual(
+            expect.objectContaining({
+                id: postId,
+                likesCount: expect.any(Number),
+                commentsCount: expect.any(Number),
+                relevanceScore: expect.any(Number),
+            }),
+        )
+    })
 })

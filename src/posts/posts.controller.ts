@@ -8,19 +8,29 @@ import {
     ParseIntPipe,
     Post,
 } from "@nestjs/common"
-import { PostEntity } from "@/posts/entities/post.entity"
+import { EventEmitter2 } from "@nestjs/event-emitter"
+import { CommentCreatedEvent } from "@/events/comment-created.event"
+import { LikeCreatedEvent } from "@/events/like-created.event"
+import { PostCreatedEvent } from "@/events/post-created.event"
 import { legacyModerationAdapter } from "@/posts/legacy-moderation.adapter"
 import { PostsService } from "@/posts/posts.service"
 import { CreateCommentDto, CreatePostDto } from "@/posts/posts.dtos"
 
 @Controller("api/posts")
 export class PostsController {
-    constructor(private readonly postsService: PostsService) {}
+    constructor(
+        private readonly postsService: PostsService,
+        private readonly eventEmitter: EventEmitter2,
+    ) {}
 
     @Post()
     async create(@Body() body: CreatePostDto) {
         try {
             const created = await this.postsService.create(body)
+            this.eventEmitter.emit(
+                "post.created",
+                new PostCreatedEvent(created.id, created.title),
+            )
             return { ok: true, payload: created }
         } catch (e) {
             throw new BadRequestException(e.message)
@@ -77,6 +87,11 @@ export class PostsController {
         )
         post.addComment(comment)
 
+        this.eventEmitter.emit(
+            "comment.created",
+            new CommentCreatedEvent(post.id, comment.id),
+        )
+
         return {
             message: "comment_created",
             entity: comment,
@@ -92,6 +107,8 @@ export class PostsController {
 
         const like = await this.postsService.addLike(post)
         post.addLike(like)
+
+        this.eventEmitter.emit("like.created", new LikeCreatedEvent(post.id, like.id))
 
         return {
             success: true,

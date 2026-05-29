@@ -1,0 +1,134 @@
+# Auditoría de diseño del backend
+
+## 1. `PostsController` con responsabilidades excesivas
+- Ubicación: `src/posts/posts.controller.ts`
+- Por qué es un problema:
+  - Maneja validación de entrada, orquestación de negocios, acceso a datos directo, transformación de modelos, integración legacy, lógica de ranking y notificaciones.
+  - Viola el principio de responsabilidad única de SOLID.
+- Impacto:
+  - Componente monolítico difícil de entender y mantener.
+  - Cambios en un flujo afectan múltiples comportamientos en el mismo archivo.
+  - Escalabilidad y pruebas unitarias se degradan.
+- Severidad: Crítico
+
+## 2. Acoplamiento directo del controlador con `PrismaService`
+- Ubicación: `src/posts/posts.controller.ts`
+- Por qué es un problema:
+  - El controlador inyecta y usa `PrismaService` directamente junto con `PostsService`.
+  - Rompe la abstracción de la capa de servicio y mezcla lógica de infraestructura con la capa de presentación.
+- Impacto:
+  - Difícil sustituir o cambiar persistencia.
+  - Aumenta la propensión a dependencias circulares y acoplamientos rígidos.
+  - Reduce aislamiento de pruebas del controlador.
+- Severidad: Alto
+
+## 3. `PostsService` es un envoltorio insuficiente sobre Prisma
+- Ubicación: `src/posts/posts.service.ts`
+- Por qué es un problema:
+  - Solo expone operaciones CRUD simples sin encapsular lógica de dominio relevante.
+  - La lógica de negocio permanece en el controlador en lugar de estar centralizada.
+- Impacto:
+  - La capa de servicio carece de cohesión.
+  - Reutilización y extensibilidad del servicio se ven limitadas.
+  - La arquitectura de capas se convierte en falsa, con lógica importante fuera de los servicios.
+- Severidad: Alto
+
+## 4. Validación redundante y distribuida
+- Ubicación: `src/posts/posts.dtos.ts` y `src/posts/posts.controller.ts`
+- Por qué es un problema:
+  - Existen reglas de validación en los DTOs, pero el controlador vuelve a validar `title`, `imageUrl` y `comment.content`.
+  - Esto duplica la lógica y crea múltiples fuentes de verdad para las mismas reglas.
+- Impacto:
+  - Incrementa el riesgo de inconsistencias.
+  - Aumenta el esfuerzo de mantenimiento cuando cambian las reglas de validación.
+- Severidad: Medio
+
+## 5. Lógica de ranking y feed dentro del controlador
+- Ubicación: `src/posts/posts.controller.ts`, método `getFeed`
+- Por qué es un problema:
+  - El controlador calcula métricas derivadas (`likesCount`, `commentsCount`, `relevanceScore`, `tags`, `metadata`) y ordena los resultados.
+  - Estas son reglas de dominio, no de presentación.
+- Impacto:
+  - Difícil extender o cambiar el ranking sin tocar el controlador.
+  - No es reutilizable para otros consumidores o endpoints.
+  - Escalabilidad limitada: lógica compleja en memoria en el controlador.
+- Severidad: Alto
+
+## 6. Cliente legacy de moderación con interfaz frágil
+- Ubicación: `src/posts/legacy-moderation.client.ts` y su uso en `src/posts/posts.controller.ts`
+- Por qué es un problema:
+  - Devuelve tipos heterogéneos (`"BLOCK"`, `"OK"`, `number`, `object`).
+  - El controlador asume la estructura exacta de la respuesta y contiene condicionales complejos para normalizarla.
+- Impacto:
+  - Aumenta la fragilidad ante cambios en el cliente legacy.
+  - Acopla estrechamente el controlador a un contrato implícito mal definido.
+  - Difícil de testear y de evolucionar la integración legacy.
+- Severidad: Medio
+
+## 7. Entidades de dominio con baja encapsulación
+- Ubicación: `src/posts/entities/*.entity.ts`
+- Por qué es un problema:
+  - `PostEntity`, `CommentEntity` y `LikeEntity` son contenedores de datos sin comportamiento.
+  - Tienen constructores largos con muchos parámetros públicos.
+- Impacto:
+  - Reduce la claridad del modelo de dominio.
+  - Hace frágil la creación de instancias y el mantenimiento de invariantes.
+  - No facilita la encapsulación de lógica asociada a estas entidades.
+- Severidad: Medio
+
+## 8. Falta de modularidad en servicios de dominio e infraestructura
+- Ubicación: `src/posts/posts.module.ts`, `src/prisma/prisma.module.ts`
+- Por qué es un problema:
+  - No existen módulos o servicios dedicados para moderación, ranking, notificaciones, o logging.
+  - Prisma se exporta globalmente y se usa directamente desde varias capas.
+- Impacto:
+  - Arquitectura plana y rígida.
+  - Menor capacidad de evolucionar independientemente los distintos dominios.
+  - Incremento de acoplamientos implícitos entre responsabilidades.
+- Severidad: Medio
+
+## 9. Proceduralidad excesiva dentro del controlador
+- Ubicación: `src/posts/posts.controller.ts`
+- Por qué es un problema:
+  - Se concentra lógica procedural secuencial en métodos del controlador.
+  - No hay orquestadores ni servicios especializados que encapsulen la lógica.
+- Impacto:
+  - Difícil de leer y mantener.
+  - Codifica flujos completos en un solo lugar.
+  - Amplifica la probabilidad de error al crecer el controlador.
+- Severidad: Alto
+
+## 10. Rigidez por mezcla de lógica de negocio con infraestructura
+- Ubicación: `src/posts/posts.controller.ts`
+- Por qué es un problema:
+  - El controlador hace consultas a la base de datos, lógica de negocio y llamadas a utilidades de notificación/logging directas.
+  - Las funciones `logDomainEvent`, `fakeSendNotification`, `fakeRecomputeSomething` están acopladas al flujo.
+- Impacto:
+  - Baja flexibilidad para cambiar mecanismos de notificación o logging.
+  - Crea dependencias implícitas y reduce capacidad de sustituir comportamientos.
+- Severidad: Alto
+
+## 11. Distribución inconsistente de la lógica de acceso a datos
+- Ubicación: `src/posts/posts.controller.ts` y `src/posts/posts.service.ts`
+- Por qué es un problema:
+  - Parte del acceso a datos se hace desde el servicio y parte desde el controlador.
+  - No hay una única capa responsable de la persistencia.
+- Impacto:
+  - Confusión sobre dónde deben residir las operaciones de datos.
+  - Dificulta la extensión y reasignación de responsabilidades.
+  - Aumenta el peligro de lógica duplicada en futuras rutas.
+- Severidad: Alto
+
+## 12. Pruebas integrales denotan acoplamiento pesado
+- Ubicación: `tests/posts.integration.spec.ts`
+- Por qué es un problema:
+  - Las pruebas son de integración debido a la falta de componentes desacoplados y adaptadores definidos.
+  - No hay evidencia clara de pruebas unitarias de servicios o adaptadores.
+- Impacto:
+  - Refactorizaciones se vuelven más costosas.
+  - Cobertura de regresiones en lógica interna es más difícil.
+- Severidad: Medio
+
+---
+## Conclusión general
+La arquitectura backend presenta debilidades claras en la separación de capas, encapsulación y cohesión. El mayor riesgo es un controlador sobrecargado que mezcla persistencia, lógica de dominio e infraestructura, lo que genera un backend rígido, difícil de extender y con baja capacidad de pruebas aisladas.

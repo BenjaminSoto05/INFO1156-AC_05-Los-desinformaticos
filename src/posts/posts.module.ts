@@ -5,6 +5,7 @@ import { PrismaModule } from "@/prisma/prisma.module"
 import { PostsRepository } from "@/posts/posts.repository"
 import { ModerationService } from "@/posts/moderation.service"
 import { FeedRankingService } from "@/posts/feed-ranking.service"
+import { FeedService } from "@/posts/feed.service"
 
 @Module({
     imports: [PrismaModule],
@@ -14,6 +15,7 @@ import { FeedRankingService } from "@/posts/feed-ranking.service"
         PostsRepository,
         ModerationService,
         FeedRankingService,
+        FeedService,
     ],
 })
 export class PostsModule {}

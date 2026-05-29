@@ -36,6 +36,6 @@ export class ModerationService {
             return { blocked: false, reason: "ok", raw: moderation }
         }
 
-        throw new BadRequestException("Unsupported moderation response")
+        throw new BadRequestException({ ok: false, error: "Unsupported moderation response" })
     }
 }

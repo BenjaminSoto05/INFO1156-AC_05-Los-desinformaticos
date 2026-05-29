@@ -87,6 +87,45 @@ describe("Posts integration", () => {
         )
     })
 
+    it("rejects invalid request bodies via DTO validation", async () => {
+        const createResponse = await request(app.getHttpServer())
+            .post("/api/posts")
+            .send({
+                title: "Post de validacion",
+                description: "Validacion de cuerpo basada en DTO.",
+                imageUrl: "https://example.com/post-validate.jpg",
+            })
+            .expect(201)
+
+        const postId = createResponse.body.payload.id
+
+        const shortComment = await request(app.getHttpServer())
+            .post(`/api/posts/${postId}/comments`)
+            .send({ content: "a" })
+            .expect(400)
+
+        expect(shortComment.body.ok).toBe(false)
+        expect(shortComment.body.error).toBe("Validation failed")
+        expect(shortComment.body.details).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ property: "content" }),
+            ]),
+        )
+
+        const invalidLike = await request(app.getHttpServer())
+            .post(`/api/posts/${postId}/likes`)
+            .send({ reactionType: "like", weight: 0 })
+            .expect(400)
+
+        expect(invalidLike.body.ok).toBe(false)
+        expect(invalidLike.body.error).toBe("Validation failed")
+        expect(invalidLike.body.details).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ property: "weight" }),
+            ]),
+        )
+    })
+
     it("orders feed by mostLiked", async () => {
         const firstPost = await request(app.getHttpServer())
             .post("/api/posts")

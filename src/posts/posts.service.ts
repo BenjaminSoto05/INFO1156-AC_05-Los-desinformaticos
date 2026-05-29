@@ -10,7 +10,8 @@ import {
     FeedQueryDto,
 } from "@/posts/posts.dtos"
 import { PostsMapper } from "@/posts/posts.mapper"
-import { FeedMode, FeedRankingService } from "@/posts/feed-ranking.service"
+import { FeedMode } from "@/posts/feed-ranking.service"
+import { FeedService } from "@/posts/feed.service"
 import { ModerationService } from "@/posts/moderation.service"
 import { PostsRepository } from "@/posts/posts.repository"
 
@@ -19,7 +20,7 @@ export class PostsService {
     constructor(
         private readonly repository: PostsRepository,
         private readonly moderationService: ModerationService,
-        private readonly rankingService: FeedRankingService,
+        private readonly feedService: FeedService,
     ) {}
 
     async create(data: CreatePostDto) {
@@ -47,21 +48,13 @@ export class PostsService {
         const mode = (query.mode || "latest") as FeedMode
         const posts = await this.repository.findAllWithRelations()
 
-        const mappedPosts = posts.map((post) =>
-            PostsMapper.toFeedPostEntity(post, mode),
-        )
-
-        return {
-            mode,
-            count: mappedPosts.length,
-            rows: this.rankingService.sort(mappedPosts, mode),
-        }
+        return this.feedService.getFeed(posts, mode)
     }
 
     async getComments(postId: number) {
         const post = await this.findById(postId)
         if (!post) {
-            throw new NotFoundException("Post not found")
+            throw new NotFoundException({ ok: false, error: "Post not found" })
         }
 
         const comments = await this.repository.findCommentsByPostId(postId)
@@ -83,14 +76,11 @@ export class PostsService {
             throw new NotFoundException("Post not found")
         }
 
-        if (data.content.length < 2) {
-            throw new BadRequestException("Comment too short")
-        }
 
         const moderation = this.moderationService.review(data.content)
 
         if (moderation.blocked) {
-            throw new BadRequestException("Comment blocked by moderation")
+            throw new BadRequestException({ ok: false, error: "Comment blocked by moderation" })
         }
 
         const created = await this.repository.createComment(
@@ -115,13 +105,10 @@ export class PostsService {
     async addLike(postId: number, data: AddLikeDto) {
         const post = await this.findById(postId)
         if (!post) {
-            throw new NotFoundException("Post not found")
+            throw new NotFoundException({ ok: false, error: "Post not found" })
         }
 
         const weight = data.weight || 1
-        if (weight < 1) {
-            throw new BadRequestException("Weight must be at least 1")
-        }
 
         const like = await this.repository.addLike(postId, data, "controller")
 

@@ -1,43 +1,57 @@
 import { Injectable } from "@nestjs/common"
 import { AddLikeDto, CreateCommentDto, CreatePostDto } from "@/posts/posts.dtos"
-import { PrismaService } from "@/prisma/prisma.service"
+import { PostsRepository } from "@/posts/posts.repository"
+import { FeedService } from "@/posts/feed.service"
+import { FeedMode } from "@/posts/feed-ranking.service"
+import { PostEntity } from "@/posts/entities/post.entity"
+import { CommentEntity } from "@/posts/entities/comment.entity"
+import { LikeEntity } from "@/posts/entities/like.entity"
 
 @Injectable()
 export class PostsService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly repository: PostsRepository,
+        private readonly feedService: FeedService,
+    ) {}
 
-    create(data: CreatePostDto) {
-        return this.prisma.post.create({ data })
+    async create(data: CreatePostDto) {
+        const post = await this.repository.createPost(data)
+        return PostEntity.create(post)
     }
 
-    findAll() {
-        return this.prisma.post.findMany({
-            orderBy: { createdAt: "desc" },
+    async findAll() {
+        const posts = await this.repository.findAll()
+        return posts.map((post) => PostEntity.create(post))
+    }
+
+    async findById(id: number) {
+        const post = await this.repository.findByIdWithRelations(id)
+        if (!post) return null
+
+        return PostEntity.create({
+            ...post,
+            comments: post.comments.map((c) => CommentEntity.create(c)),
+            likes: post.likes.map((l) => LikeEntity.create(l)),
         })
     }
 
-    findById(id: number) {
-        return this.prisma.post.findUnique({ where: { id } })
+    async createComment(post: PostEntity, content: string) {
+        const created = await this.repository.createComment(post.id, {
+            content,
+        } as CreateCommentDto)
+        return CommentEntity.create(created)
     }
 
-    createComment(postId: number, data: CreateCommentDto) {
-        return this.prisma.comment.create({
-            data: {
-                postId,
-                content: data.content,
-                source: "service",
-            },
-        })
+    async addLike(post: PostEntity, data?: AddLikeDto) {
+        const created = await this.repository.addLike(
+            post.id,
+            data ?? ({} as AddLikeDto),
+        )
+        return LikeEntity.create(created)
     }
 
-    addLike(postId: number, data: AddLikeDto) {
-        return this.prisma.like.create({
-            data: {
-                postId,
-                reactionType: data.reactionType || "like",
-                weight: data.weight || 1,
-                source: "service",
-            },
-        })
+    async getFeed(mode: string) {
+        const posts = await this.repository.findAllWithRelations()
+        return this.feedService.getFeed(posts, mode as FeedMode)
     }
 }

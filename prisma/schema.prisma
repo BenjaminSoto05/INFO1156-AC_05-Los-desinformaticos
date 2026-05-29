@@ -21,7 +21,7 @@ model Comment {
   id        Int      @id @default(autoincrement())
   postId    Int
   content   String
-  source    String
+  source    String   @default("default")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -30,9 +30,9 @@ model Comment {
 model Like {
   id           Int      @id @default(autoincrement())
   postId       Int
-  reactionType String
-  weight       Int
-  source       String
+  reactionType String   @default("like")
+  weight       Int      @default(1)
+  source       String   @default("default")
   createdAt    DateTime @default(now())
   post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 }

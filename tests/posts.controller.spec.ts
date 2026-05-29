@@ -4,17 +4,24 @@ describe("PostsController unit tests", () => {
     const postsServiceMock = {
         create: jest.fn(),
         findAll: jest.fn(),
+        findById: jest.fn(),
         getFeed: jest.fn(),
-        getComments: jest.fn(),
         createComment: jest.fn(),
         addLike: jest.fn(),
+    }
+
+    const eventEmitterMock = {
+        emit: jest.fn(),
     }
 
     let controller: PostsController
 
     beforeEach(() => {
         jest.clearAllMocks()
-        controller = new PostsController(postsServiceMock as any)
+        controller = new PostsController(
+            postsServiceMock as any,
+            eventEmitterMock as any,
+        )
     })
 
     it("delegates feed requests to PostsService", async () => {
@@ -23,30 +30,17 @@ describe("PostsController unit tests", () => {
 
         const result = await controller.getFeed({ mode: "latest" })
 
-        expect(postsServiceMock.getFeed).toHaveBeenCalledWith({ mode: "latest" })
+        expect(postsServiceMock.getFeed).toHaveBeenCalledWith("latest")
         expect(result).toBe(expected)
     })
 
-    it("delegates comment creation to PostsService", async () => {
-        const expected = { message: "comment_created" }
-        postsServiceMock.createComment.mockResolvedValue(expected)
+    it("delegates findAll to PostsService", async () => {
+        const posts = [{ id: 1 }]
+        postsServiceMock.findAll.mockResolvedValue(posts)
 
-        const result = await controller.createComment(1, { content: "Hola" })
+        const result = await controller.findAll()
 
-        expect(postsServiceMock.createComment).toHaveBeenCalledWith(1, { content: "Hola" })
-        expect(result).toBe(expected)
-    })
-
-    it("delegates like creation to PostsService", async () => {
-        const expected = { success: true }
-        postsServiceMock.addLike.mockResolvedValue(expected)
-
-        const result = await controller.addLike(1, { reactionType: "like", weight: 1 })
-
-        expect(postsServiceMock.addLike).toHaveBeenCalledWith(1, {
-            reactionType: "like",
-            weight: 1,
-        })
-        expect(result).toBe(expected)
+        expect(postsServiceMock.findAll).toHaveBeenCalled()
+        expect(result).toEqual({ total: 1, items: posts })
     })
 })

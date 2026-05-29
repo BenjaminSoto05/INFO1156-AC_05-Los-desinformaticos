@@ -13,7 +13,11 @@ export class ModerationService {
         const moderation = legacyModerationApi.review(content)
 
         if (moderation === "BLOCK") {
-            return { blocked: true, reason: "blocked_by_legacy", raw: moderation }
+            return {
+                blocked: true,
+                reason: "blocked_by_legacy",
+                raw: moderation,
+            }
         }
 
         if (typeof moderation === "number") {
@@ -36,6 +40,9 @@ export class ModerationService {
             return { blocked: false, reason: "ok", raw: moderation }
         }
 
-        throw new BadRequestException({ ok: false, error: "Unsupported moderation response" })
+        throw new BadRequestException({
+            ok: false,
+            error: "Unsupported moderation response",
+        })
     }
 }

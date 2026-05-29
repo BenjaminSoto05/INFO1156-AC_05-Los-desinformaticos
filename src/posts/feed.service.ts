@@ -1,12 +1,15 @@
 import { Injectable } from "@nestjs/common"
-import { FeedMode, FeedRankingService } from "@/posts/feed-ranking.service"
-import { PostEntity } from "@/posts/entities/post.entity"
+import {
+    FeedItem,
+    FeedMode,
+    FeedRankingService,
+} from "@/posts/feed-ranking.service"
 
 @Injectable()
 export class FeedService {
     constructor(private readonly rankingService: FeedRankingService) {}
 
-    buildFeedPost(post: any, mode: FeedMode) {
+    buildFeedPost(post: any, mode: FeedMode): FeedItem {
         const likesCount = post.likes.reduce(
             (sum: number, like: any) => sum + like.weight,
             0,
@@ -20,31 +23,31 @@ export class FeedService {
             .split(" ")
             .filter((word: string) => word.length > 4)
 
-        return new PostEntity(
-            post.id,
-            post.title,
-            post.description,
-            post.imageUrl,
-            post.createdAt,
-            post.updatedAt,
+        return {
+            id: post.id,
+            title: post.title,
+            description: post.description,
+            imageUrl: post.imageUrl,
+            createdAt: post.createdAt,
+            updatedAt: post.updatedAt,
             likesCount,
             commentsCount,
             relevanceScore,
-            relevanceScore > 20,
-            "feed-service",
+            isTrending: relevanceScore > 20,
+            origin: "feed-service",
             tags,
-            {
+            metadata: {
                 likesWeights: post.likes.map((like: any) => like.weight),
                 commentLengths: post.comments.map(
                     (comment: any) => comment.content.length,
                 ),
                 hourOfCreate: new Date(post.createdAt).getHours(),
             },
-            mode,
-        )
+            feedMode: mode,
+        }
     }
 
-    buildFeedPosts(posts: any[], mode: FeedMode) {
+    buildFeedPosts(posts: any[], mode: FeedMode): FeedItem[] {
         return posts.map((post) => this.buildFeedPost(post, mode))
     }
 

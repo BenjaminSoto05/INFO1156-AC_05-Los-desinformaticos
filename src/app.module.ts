@@ -1,10 +1,11 @@
 import { BadRequestException, Module, ValidationPipe } from "@nestjs/common"
 import { APP_PIPE } from "@nestjs/core"
+import { EventEmitterModule } from "@nestjs/event-emitter"
 import { PostsModule } from "@/posts/posts.module"
 import { PrismaModule } from "@/prisma/prisma.module"
 
 @Module({
-    imports: [PrismaModule, PostsModule],
+    imports: [EventEmitterModule.forRoot(), PrismaModule, PostsModule],
     providers: [
         {
             provide: APP_PIPE,

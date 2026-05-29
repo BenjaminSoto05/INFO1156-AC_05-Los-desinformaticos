@@ -17,10 +17,7 @@ describe("FeedService unit tests", () => {
                 imageUrl: "https://example.com/post.jpg",
                 createdAt: new Date("2026-01-01T00:00:00Z"),
                 updatedAt: new Date("2026-01-01T00:00:00Z"),
-                likes: [
-                    { weight: 1 },
-                    { weight: 2 },
-                ],
+                likes: [{ weight: 1 }, { weight: 2 }],
                 comments: [
                     { content: "First comment" },
                     { content: "Second comment" },

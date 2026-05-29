@@ -19,6 +19,9 @@ import { FeedService } from "@/posts/feed.service"
         ModerationService,
         FeedRankingService,
         FeedService,
+        PostEventsListener,
+        NotificationService,
+        RecomputationService,
     ],
 })
 export class PostsModule {}

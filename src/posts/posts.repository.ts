@@ -1,10 +1,6 @@
 import { Injectable } from "@nestjs/common"
 import { PrismaService } from "@/prisma/prisma.service"
-import {
-    AddLikeDto,
-    CreateCommentDto,
-    CreatePostDto,
-} from "@/posts/posts.dtos"
+import { AddLikeDto, CreateCommentDto, CreatePostDto } from "@/posts/posts.dtos"
 
 @Injectable()
 export class PostsRepository {
@@ -22,6 +18,16 @@ export class PostsRepository {
 
     findById(id: number) {
         return this.prisma.post.findUnique({ where: { id } })
+    }
+
+    findByIdWithRelations(id: number) {
+        return this.prisma.post.findUnique({
+            where: { id },
+            include: {
+                comments: true,
+                likes: true,
+            },
+        })
     }
 
     findAllWithRelations() {

@@ -1,37 +1,56 @@
 import { Injectable } from "@nestjs/common"
-import { PostEntity } from "@/posts/entities/post.entity"
 
 export type FeedMode = "latest" | "mostLiked" | "mostCommented" | "relevance"
 
+export interface FeedItem {
+    id: number
+    title: string
+    description: string
+    imageUrl: string
+    createdAt: Date
+    updatedAt: Date
+    likesCount: number
+    commentsCount: number
+    relevanceScore: number
+    isTrending: boolean
+    origin: string
+    tags: string[]
+    metadata: Record<string, unknown>
+    feedMode: string
+}
+
 @Injectable()
 export class FeedRankingService {
-    sort(posts: PostEntity[], mode: FeedMode) {
-        const strategies: Record<FeedMode, (items: PostEntity[]) => PostEntity[]> = {
-            latest: this.sortLatest,
-            mostLiked: this.sortMostLiked,
-            mostCommented: this.sortMostCommented,
-            relevance: this.sortByRelevance,
-        }
+    sort(posts: FeedItem[], mode: FeedMode): FeedItem[] {
+        const strategies: Record<FeedMode, (items: FeedItem[]) => FeedItem[]> =
+            {
+                latest: this.sortLatest,
+                mostLiked: this.sortMostLiked,
+                mostCommented: this.sortMostCommented,
+                relevance: this.sortByRelevance,
+            }
 
         const sorter = strategies[mode] || this.sortLatest
         return sorter(posts)
     }
 
-    private sortLatest(posts: PostEntity[]) {
+    private sortLatest(posts: FeedItem[]) {
         return [...posts].sort(
-            (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+            (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime(),
         )
     }
 
-    private sortMostLiked(posts: PostEntity[]) {
+    private sortMostLiked(posts: FeedItem[]) {
         return [...posts].sort((a, b) => b.likesCount - a.likesCount)
     }
 
-    private sortMostCommented(posts: PostEntity[]) {
+    private sortMostCommented(posts: FeedItem[]) {
         return [...posts].sort((a, b) => b.commentsCount - a.commentsCount)
     }
 
-    private sortByRelevance(posts: PostEntity[]) {
+    private sortByRelevance(posts: FeedItem[]) {
         return [...posts].sort((a, b) => b.relevanceScore - a.relevanceScore)
     }
 }

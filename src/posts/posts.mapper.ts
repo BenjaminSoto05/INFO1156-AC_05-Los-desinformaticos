@@ -2,7 +2,10 @@ import { CommentEntity } from "@/posts/entities/comment.entity"
 import { LikeEntity } from "@/posts/entities/like.entity"
 
 export class PostsMapper {
-    static toCommentEntity(comment: any, moderation: { blocked: boolean; reason: string }) {
+    static toCommentEntity(
+        comment: any,
+        moderation: { blocked: boolean; reason: string },
+    ) {
         return new CommentEntity(
             comment.id,
             comment.postId,

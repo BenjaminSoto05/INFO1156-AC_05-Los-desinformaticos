@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     Body,
     Controller,
     Get,
@@ -6,6 +7,7 @@ import {
     Param,
     ParseIntPipe,
     Post,
+    Query,
 } from "@nestjs/common"
 import { EventEmitter2 } from "@nestjs/event-emitter"
 import { CommentCreatedEvent } from "@/events/comment-created.event"
@@ -13,7 +15,12 @@ import { LikeCreatedEvent } from "@/events/like-created.event"
 import { PostCreatedEvent } from "@/events/post-created.event"
 import { legacyModerationAdapter } from "@/posts/legacy-moderation.adapter"
 import { PostsService } from "@/posts/posts.service"
-import { CreateCommentDto, CreatePostDto } from "@/posts/posts.dtos"
+import {
+    AddLikeDto,
+    CreateCommentDto,
+    CreatePostDto,
+    FeedQueryDto,
+} from "@/posts/posts.dtos"
 
 @Controller("api/posts")
 export class PostsController {
@@ -46,6 +53,12 @@ export class PostsController {
             total: posts.length,
             items: posts,
         }
+    }
+
+    @Get("feed")
+    async getFeed(@Query() query: FeedQueryDto) {
+        const mode = query.mode || "latest"
+        return this.postsService.getFeed(mode)
     }
 
     @Get(":id")
@@ -101,16 +114,22 @@ export class PostsController {
     }
 
     @Post(":id/likes")
-    async addLike(@Param("id", ParseIntPipe) id: number) {
+    async addLike(
+        @Param("id", ParseIntPipe) id: number,
+        @Body() body: AddLikeDto,
+    ) {
         const post = await this.postsService.findById(id)
         if (!post) {
             throw new NotFoundException("Post not found")
         }
 
-        const like = await this.postsService.addLike(post)
+        const like = await this.postsService.addLike(post, body)
         post.addLike(like)
 
-        this.eventEmitter.emit("like.created", new LikeCreatedEvent(post.id, like.id))
+        this.eventEmitter.emit(
+            "like.created",
+            new LikeCreatedEvent(post.id, like.id),
+        )
 
         return {
             success: true,

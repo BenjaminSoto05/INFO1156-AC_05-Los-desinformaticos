@@ -1,18 +1,28 @@
-import {
-    BadRequestException,
-    Injectable,
-    NotFoundException,
-} from "@nestjs/common"
-import {
-    AddLikeDto,
-    CreateCommentDto,
-    CreatePostDto,
-    FeedQueryDto,
-} from "@/posts/posts.dtos"
-import { PostsMapper } from "@/posts/posts.mapper"
-import { FeedMode, FeedRankingService } from "@/posts/feed-ranking.service"
-import { ModerationService } from "@/posts/moderation.service"
-import { PostsRepository } from "@/posts/posts.repository"
+import { BadRequestException, Injectable } from "@nestjs/common"
+import { CommentEntity } from "@/posts/entities/comment.entity"
+import { LikeEntity } from "@/posts/entities/like.entity"
+import { PostEntity } from "@/posts/entities/post.entity"
+import { legacyModerationApi } from "@/posts/legacy-moderation.client"
+import { AddLikeDto, CreateCommentDto, CreatePostDto } from "@/posts/posts.dtos"
+import { PrismaService } from "@/prisma/prisma.service"
+
+const logDomainEvent = (
+    eventName: string,
+    payload: Record<string, unknown>,
+) => {
+    console.log(`[event:${eventName}]`, payload)
+}
+
+const fakeSendNotification = (
+    type: string,
+    payload: Record<string, unknown>,
+) => {
+    console.log(`[notify:${type}]`, payload)
+}
+
+const fakeRecomputeSomething = (postId: number) => {
+    console.log(`[recompute] postId=${postId}`)
+}
 
 @Injectable()
 export class PostsService {
@@ -22,21 +32,40 @@ export class PostsService {
         private readonly rankingService: FeedRankingService,
     ) {}
 
-    async create(data: CreatePostDto) {
-        const created = await this.repository.createPost(data)
+    async createPost(data: CreatePostDto) {
+        if (data.title.length < 3 || data.title.length > 120) {
+            throw new BadRequestException(
+                "Title length must be between 3 and 120",
+            )
+        }
 
-        this.logDomainEvent("post.created", {
+        if (!data.imageUrl.startsWith("http")) {
+            throw new BadRequestException("Image URL must start with http")
+        }
+
+        const created = await this.prisma.post.create({ data })
+
+        logDomainEvent("post.created", {
             postId: created.id,
             title: created.title,
         })
-        this.fakeSendNotification("post", { postId: created.id })
-        this.fakeRecomputeSomething(created.id)
+        fakeSendNotification("post", { postId: created.id })
+        fakeRecomputeSomething(created.id)
 
         return created
     }
 
     findAll() {
         return this.repository.findAll()
+    }
+
+    findAllWithRelations() {
+        return this.prisma.post.findMany({
+            include: {
+                comments: true,
+                likes: true,
+            },
+        })
     }
 
     findById(id: number) {
@@ -58,95 +87,194 @@ export class PostsService {
         }
     }
 
-    async getComments(postId: number) {
-        const post = await this.findById(postId)
-        if (!post) {
-            throw new NotFoundException("Post not found")
-        }
+    async getFeed(mode: string) {
+        const posts = await this.prisma.post.findMany({
+            include: {
+                comments: true,
+                likes: true,
+            },
+        })
 
-        const comments = await this.repository.findCommentsByPostId(postId)
+        const mappedPosts = posts.map((post) => {
+            const likesCount = post.likes.reduce(
+                (sum, like) => sum + like.weight,
+                0,
+            )
+            const commentsCount = post.comments.length
+            // 36_000_00 = 1 hora en milisegundos.
+            const hoursSinceCreated =
+                (Date.now() - new Date(post.createdAt).getTime()) / 36_000_00
+            const relevanceScore =
+                likesCount * 2 +
+                commentsCount * 3 -
+                Math.floor(hoursSinceCreated)
 
-        return {
-            total_comments: comments.length,
-            comments: comments.map((comment) =>
-                PostsMapper.toCommentEntity(comment, {
-                    blocked: false,
-                    reason: "existing",
-                }),
-            ),
+            const tags = post.title.split(" ").filter((word) => word.length > 4)
+            const metadata = {
+                likesWeights: post.likes.map((like) => like.weight),
+                commentLengths: post.comments.map(
+                    (comment) => comment.content.length,
+                ),
+                hourOfCreate: new Date(post.createdAt).getHours(),
+            }
+
+            return new PostEntity(
+                post.id,
+                post.title,
+                post.description,
+                post.imageUrl,
+                post.createdAt,
+                post.updatedAt,
+                likesCount,
+                commentsCount,
+                relevanceScore,
+                relevanceScore > 20,
+                "feed-controller",
+                tags,
+                metadata,
+                mode,
+            )
+        })
+
+        return this.sortPosts(mappedPosts, mode)
+    }
+
+    private sortPosts(posts: PostEntity[], mode: string): PostEntity[] {
+        const sorted = [...posts]
+
+        // Ranking inline por modo
+        // Esto define la forma de ordenar en base al filtro
+        switch (mode) {
+            case "latest":
+                return sorted.sort(
+                    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+                )
+            case "mostLiked":
+                return sorted.sort((a, b) => b.likesCount - a.likesCount)
+            case "mostCommented":
+                return sorted.sort((a, b) => b.commentsCount - a.commentsCount)
+            case "relevance":
+                return sorted.sort(
+                    (a, b) => b.relevanceScore - a.relevanceScore,
+                )
+            default:
+                return sorted.sort(
+                    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+                )
         }
     }
 
-    async createComment(postId: number, data: CreateCommentDto) {
-        const post = await this.findById(postId)
-        if (!post) {
-            throw new NotFoundException("Post not found")
-        }
+    async getCommentsByPostId(postId: number) {
+        const comments = await this.prisma.comment.findMany({
+            where: { postId },
+            orderBy: { createdAt: "desc" },
+        })
 
+        return comments.map(
+            (comment) =>
+                new CommentEntity(
+                    comment.id,
+                    comment.postId,
+                    comment.content,
+                    comment.createdAt,
+                    comment.updatedAt,
+                    comment.source,
+                    "approved",
+                    comment.content.length > 80 ? 70 : 45,
+                    comment.content.length % 2 === 0,
+                    "es",
+                    { chars: comment.content.length, source: comment.source },
+                ),
+        )
+    }
+
+    async createComment(postId: number, data: CreateCommentDto) {
         if (data.content.length < 2) {
             throw new BadRequestException("Comment too short")
         }
 
-        const moderation = this.moderationService.review(data.content)
+        // Cliente legacy: devuelve tipos mixtos (string/number/object).
+        const moderation = legacyModerationApi.review(data.content)
 
-        if (moderation.blocked) {
+        let blocked = false
+
+        if (moderation === "BLOCK") {
+            blocked = true
+        } else if (typeof moderation === "number") {
+            blocked = moderation < 1
+        } else if (typeof moderation === "object") {
+            blocked = !("pass" in moderation && moderation.pass)
+        } else if (moderation === "OK") {
+            blocked = false
+        }
+
+        if (blocked) {
             throw new BadRequestException("Comment blocked by moderation")
         }
 
-        const created = await this.repository.createComment(
-            postId,
-            data,
-            "controller",
+        // Se persiste la información en la base de datos
+        const created = await this.prisma.comment.create({
+            data: {
+                postId,
+                content: data.content,
+                source: "service",
+            },
+        })
+
+        const entity = new CommentEntity(
+            created.id,
+            created.postId,
+            created.content,
+            created.createdAt,
+            created.updatedAt,
+            created.source,
+            "approved",
+            created.content.length > 60 ? 80 : 40,
+            false,
+            "es",
+            { moderation, source: "legacy" },
         )
 
-        this.logDomainEvent("comment.created", {
-            postId,
-            commentId: created.id,
-        })
-        this.fakeSendNotification("comment", { postId })
-        this.fakeRecomputeSomething(postId)
+        logDomainEvent("comment.created", { postId, commentId: created.id })
+        fakeSendNotification("comment", { postId })
+        fakeRecomputeSomething(postId)
 
-        return {
-            message: "comment_created",
-            entity: PostsMapper.toCommentEntity(created, moderation),
-        }
+        return entity
     }
 
     async addLike(postId: number, data: AddLikeDto) {
-        const post = await this.findById(postId)
-        if (!post) {
-            throw new NotFoundException("Post not found")
-        }
-
+        const reactionType = data.reactionType || "like"
         const weight = data.weight || 1
+
         if (weight < 1) {
             throw new BadRequestException("Weight must be at least 1")
         }
 
-        const like = await this.repository.addLike(postId, data, "controller")
-
-        this.logDomainEvent("like.created", { postId, likeId: like.id })
-        this.fakeSendNotification("like", {
-            postId,
-            reactionType: like.reactionType,
+        const like = await this.prisma.like.create({
+            data: {
+                postId,
+                reactionType,
+                weight,
+                source: "service",
+            },
         })
-        this.fakeRecomputeSomething(postId)
 
-        return {
-            success: true,
-            like: PostsMapper.toLikeEntity(like),
-        }
-    }
+        const entity = new LikeEntity(
+            like.id,
+            like.postId,
+            like.reactionType,
+            like.weight,
+            like.source,
+            like.createdAt,
+            like.weight > 2 ? "strong" : "normal",
+            true,
+            { from: "manual", r: like.reactionType },
+        )
 
-    private logDomainEvent(eventName: string, payload: Record<string, unknown>) {
-        console.log(`[event:${eventName}]`, payload)
-    }
+        logDomainEvent("like.created", { postId, likeId: like.id })
+        fakeSendNotification("like", { postId, reactionType })
+        fakeRecomputeSomething(postId)
 
-    private fakeSendNotification(type: string, payload: Record<string, unknown>) {
-        console.log(`[notify:${type}]`, payload)
-    }
-
-    private fakeRecomputeSomething(postId: number) {
-        console.log(`[recompute] postId=${postId}`)
+        return entity
     }
 }

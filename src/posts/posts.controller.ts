@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from "@nestjs/common"
+import {
+    Body,
+    Controller,
+    Get,
+    NotFoundException,
+    Param,
+    ParseIntPipe,
+    Post,
+    Query,
+} from "@nestjs/common"
+
 import { PostsService } from "@/posts/posts.service"
 import {
     AddLikeDto,
@@ -13,7 +23,7 @@ export class PostsController {
 
     @Post()
     async create(@Body() body: CreatePostDto) {
-        const created = await this.postsService.create(body)
+        const created = await this.postsService.createPost(body)
 
         return {
             ok: true,
@@ -33,12 +43,29 @@ export class PostsController {
 
     @Get("feed")
     async getFeed(@Query() query: FeedQueryDto) {
-        return this.postsService.getFeed(query)
+        const mode = query.mode || "latest"
+        const rows = await this.postsService.getFeed(mode)
+
+        return {
+            mode,
+            count: rows.length,
+            rows,
+        }
     }
 
     @Get(":id/comments")
     async getComments(@Param("id", ParseIntPipe) id: number) {
-        return this.postsService.getComments(id)
+        const post = await this.postsService.findById(id)
+        if (!post) {
+            throw new NotFoundException("Post not found")
+        }
+
+        const comments = await this.postsService.getCommentsByPostId(id)
+
+        return {
+            total_comments: comments.length,
+            comments,
+        }
     }
 
     @Post(":id/comments")
@@ -46,7 +73,17 @@ export class PostsController {
         @Param("id", ParseIntPipe) id: number,
         @Body() body: CreateCommentDto,
     ) {
-        return this.postsService.createComment(id, body)
+        const post = await this.postsService.findById(id)
+        if (!post) {
+            throw new NotFoundException("Post not found")
+        }
+
+        const entity = await this.postsService.createComment(id, body)
+
+        return {
+            message: "comment_created",
+            entity,
+        }
     }
 
     @Post(":id/likes")
@@ -54,6 +91,16 @@ export class PostsController {
         @Param("id", ParseIntPipe) id: number,
         @Body() body: AddLikeDto,
     ) {
-        return this.postsService.addLike(id, body)
+        const post = await this.postsService.findById(id)
+        if (!post) {
+            throw new NotFoundException("Post not found")
+        }
+
+        const entity = await this.postsService.addLike(id, body)
+
+        return {
+            success: true,
+            like: entity,
+        }
     }
 }

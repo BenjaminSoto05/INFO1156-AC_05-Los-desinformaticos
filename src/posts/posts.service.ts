@@ -57,6 +57,15 @@ export class PostsService {
         })
     }
 
+    findAllWithRelations() {
+        return this.prisma.post.findMany({
+            include: {
+                comments: true,
+                likes: true,
+            },
+        })
+    }
+
     findById(id: number) {
         return this.prisma.post.findUnique({ where: { id } })
     }

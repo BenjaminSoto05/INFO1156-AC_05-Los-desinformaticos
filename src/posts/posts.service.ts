@@ -26,7 +26,11 @@ const fakeRecomputeSomething = (postId: number) => {
 
 @Injectable()
 export class PostsService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly repository: PostsRepository,
+        private readonly moderationService: ModerationService,
+        private readonly rankingService: FeedRankingService,
+    ) {}
 
     async createPost(data: CreatePostDto) {
         if (data.title.length < 3 || data.title.length > 120) {
@@ -52,9 +56,7 @@ export class PostsService {
     }
 
     findAll() {
-        return this.prisma.post.findMany({
-            orderBy: { createdAt: "desc" },
-        })
+        return this.repository.findAll()
     }
 
     findAllWithRelations() {
@@ -67,7 +69,22 @@ export class PostsService {
     }
 
     findById(id: number) {
-        return this.prisma.post.findUnique({ where: { id } })
+        return this.repository.findById(id)
+    }
+
+    async getFeed(query: FeedQueryDto) {
+        const mode = (query.mode || "latest") as FeedMode
+        const posts = await this.repository.findAllWithRelations()
+
+        const mappedPosts = posts.map((post) =>
+            PostsMapper.toFeedPostEntity(post, mode),
+        )
+
+        return {
+            mode,
+            count: mappedPosts.length,
+            rows: this.rankingService.sort(mappedPosts, mode),
+        }
     }
 
     async getFeed(mode: string) {

@@ -23,30 +23,23 @@ export class PostsService {
         private readonly feedService: FeedService,
     ) {}
 
+    async createPost(data: CreatePostDto) {
+        if (data.title.length < 3 || data.title.length > 120) {
+            throw new BadRequestException(
+                "Title length must be between 3 and 120",
+            )
+        }
+
     async create(data: CreatePostDto) {
-        const created = await this.repository.createPost(data)
+        const post = await this.prisma.post.create({ data })
+        return PostEntity.create(post)
+    }
 
-        this.logDomainEvent("post.created", {
-            postId: created.id,
-            title: created.title,
+    async findAll() {
+        const posts = await this.prisma.post.findMany({
+            orderBy: { createdAt: "desc" },
+            include: { comments: true, likes: true },
         })
-        this.fakeSendNotification("post", { postId: created.id })
-        this.fakeRecomputeSomething(created.id)
-
-        return created
-    }
-
-    findAll() {
-        return this.repository.findAll()
-    }
-
-    findById(id: number) {
-        return this.repository.findById(id)
-    }
-
-    async getFeed(query: FeedQueryDto) {
-        const mode = (query.mode || "latest") as FeedMode
-        const posts = await this.repository.findAllWithRelations()
 
         return this.feedService.getFeed(posts, mode)
     }
@@ -70,8 +63,6 @@ export class PostsService {
         }
     }
 
-    async createComment(postId: number, data: CreateCommentDto) {
-        const post = await this.findById(postId)
         if (!post) {
             throw new NotFoundException("Post not found")
         }
@@ -93,13 +84,6 @@ export class PostsService {
             postId,
             commentId: created.id,
         })
-        this.fakeSendNotification("comment", { postId })
-        this.fakeRecomputeSomething(postId)
-
-        return {
-            message: "comment_created",
-            entity: PostsMapper.toCommentEntity(created, moderation),
-        }
     }
 
     async addLike(postId: number, data: AddLikeDto) {
@@ -117,23 +101,17 @@ export class PostsService {
             postId,
             reactionType: like.reactionType,
         })
-        this.fakeRecomputeSomething(postId)
 
-        return {
-            success: true,
-            like: PostsMapper.toLikeEntity(like),
-        }
+        return CommentEntity.create(comment)
     }
 
-    private logDomainEvent(eventName: string, payload: Record<string, unknown>) {
-        console.log(`[event:${eventName}]`, payload)
-    }
+    async addLike(post: PostEntity) {
+        const like = await this.prisma.like.create({
+            data: {
+                postId: post.id,
+            },
+        })
 
-    private fakeSendNotification(type: string, payload: Record<string, unknown>) {
-        console.log(`[notify:${type}]`, payload)
-    }
-
-    private fakeRecomputeSomething(postId: number) {
-        console.log(`[recompute] postId=${postId}`)
+        return LikeEntity.create(like)
     }
 }

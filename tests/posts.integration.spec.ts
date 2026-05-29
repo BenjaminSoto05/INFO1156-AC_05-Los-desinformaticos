@@ -81,8 +81,8 @@ describe("Posts integration", () => {
             .get(`/api/posts/${postId}/comments`)
             .expect(200)
 
-        expect(commentsResponse.body.total_comments).toBe(1)
-        expect(commentsResponse.body.comments[0].content).toBe(
+        expect(commentsResponse.body).toHaveLength(1)
+        expect(commentsResponse.body[0].content).toBe(
             "Comentario normal y valido",
         )
     })

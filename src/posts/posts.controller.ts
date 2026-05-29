@@ -33,7 +33,10 @@ export class PostsController {
             )
             return { ok: true, payload: created }
         } catch (e) {
-            throw new BadRequestException(e.message)
+            if (e instanceof Error) {
+                throw new BadRequestException(e.message)
+            }
+            throw new BadRequestException("An unknown error occurred")
         }
     }
 

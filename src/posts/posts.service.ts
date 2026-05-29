@@ -16,8 +16,24 @@ export class PostsService {
         })
     }
 
+    findAllWithRelations() {
+        return this.prisma.post.findMany({
+            include: {
+                comments: true,
+                likes: true,
+            },
+        })
+    }
+
     findById(id: number) {
         return this.prisma.post.findUnique({ where: { id } })
+    }
+
+    findCommentsByPostId(postId: number) {
+        return this.prisma.comment.findMany({
+            where: { postId },
+            orderBy: { createdAt: "desc" },
+        })
     }
 
     createComment(postId: number, data: CreateCommentDto) {

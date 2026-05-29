@@ -6,51 +6,55 @@ import {
     Param,
     ParseIntPipe,
     Post,
-    Query,
 } from "@nestjs/common"
-
+import { EventEmitter2 } from "@nestjs/event-emitter"
+import { CommentCreatedEvent } from "@/events/comment-created.event"
+import { LikeCreatedEvent } from "@/events/like-created.event"
+import { PostCreatedEvent } from "@/events/post-created.event"
+import { legacyModerationAdapter } from "@/posts/legacy-moderation.adapter"
 import { PostsService } from "@/posts/posts.service"
-import {
-    AddLikeDto,
-    CreateCommentDto,
-    CreatePostDto,
-    FeedQueryDto,
-} from "@/posts/posts.dtos"
+import { CreateCommentDto, CreatePostDto } from "@/posts/posts.dtos"
 
 @Controller("api/posts")
 export class PostsController {
-    constructor(private readonly postsService: PostsService) {}
+    constructor(
+        private readonly postsService: PostsService,
+        private readonly eventEmitter: EventEmitter2,
+    ) {}
 
     @Post()
     async create(@Body() body: CreatePostDto) {
-        const created = await this.postsService.createPost(body)
-
-        return {
-            ok: true,
-            payload: created,
+        try {
+            const created = await this.postsService.create(body)
+            this.eventEmitter.emit(
+                "post.created",
+                new PostCreatedEvent(created.id, created.title),
+            )
+            return { ok: true, payload: created }
+        } catch (e) {
+            if (e instanceof Error) {
+                throw new BadRequestException(e.message)
+            }
+            throw new BadRequestException("An unknown error occurred")
         }
     }
 
     @Get()
     async findAll() {
         const posts = await this.postsService.findAll()
-
         return {
             total: posts.length,
             items: posts,
         }
     }
 
-    @Get("feed")
-    async getFeed(@Query() query: FeedQueryDto) {
-        const mode = query.mode || "latest"
-        const rows = await this.postsService.getFeed(mode)
-
-        return {
-            mode,
-            count: rows.length,
-            rows,
+    @Get(":id")
+    async findById(@Param("id", ParseIntPipe) id: number) {
+        const post = await this.postsService.findById(id)
+        if (!post) {
+            throw new NotFoundException("Post not found")
         }
+        return post
     }
 
     @Get(":id/comments")
@@ -59,13 +63,7 @@ export class PostsController {
         if (!post) {
             throw new NotFoundException("Post not found")
         }
-
-        const comments = await this.postsService.getCommentsByPostId(id)
-
-        return {
-            total_comments: comments.length,
-            comments,
-        }
+        return post.comments
     }
 
     @Post(":id/comments")
@@ -78,29 +76,45 @@ export class PostsController {
             throw new NotFoundException("Post not found")
         }
 
-        const entity = await this.postsService.createComment(id, body)
+        const moderation = legacyModerationAdapter.review(body.content)
+        if (moderation.status === "BLOCK") {
+            throw new BadRequestException(
+                moderation.reason ?? "Comment blocked by moderation",
+            )
+        }
+
+        const comment = await this.postsService.createComment(
+            post,
+            body.content,
+        )
+        post.addComment(comment)
+
+        this.eventEmitter.emit(
+            "comment.created",
+            new CommentCreatedEvent(post.id, comment.id),
+        )
 
         return {
             message: "comment_created",
-            entity,
+            entity: comment,
         }
     }
 
     @Post(":id/likes")
-    async addLike(
-        @Param("id", ParseIntPipe) id: number,
-        @Body() body: AddLikeDto,
-    ) {
+    async addLike(@Param("id", ParseIntPipe) id: number) {
         const post = await this.postsService.findById(id)
         if (!post) {
             throw new NotFoundException("Post not found")
         }
 
-        const entity = await this.postsService.addLike(id, body)
+        const like = await this.postsService.addLike(post)
+        post.addLike(like)
+
+        this.eventEmitter.emit("like.created", new LikeCreatedEvent(post.id, like.id))
 
         return {
             success: true,
-            like: entity,
+            like: like,
         }
     }
 }

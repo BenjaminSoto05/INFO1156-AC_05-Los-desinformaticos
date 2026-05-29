@@ -1,13 +1,24 @@
+interface LikeProps {
+    id: number
+    postId: number
+    createdAt: Date
+}
+
 export class LikeEntity {
-    constructor(
-        public id: number,
-        public postId: number,
-        public reactionType: string,
-        public weight: number,
-        public source: string,
-        public createdAt: Date,
-        public strengthLabel: string,
-        public shouldAffectRelevanceScore: boolean,
-        public metadata: Record<string, unknown>,
-    ) {}
+    public readonly id: number
+    public readonly postId: number
+    public readonly createdAt: Date
+
+    private constructor(props: LikeProps) {
+        this.id = props.id
+        this.postId = props.postId
+        this.createdAt = props.createdAt
+    }
+
+    static create(props: { id: number; postId: number; createdAt?: Date }) {
+        return new LikeEntity({
+            ...props,
+            createdAt: props.createdAt ?? new Date(),
+        })
+    }
 }

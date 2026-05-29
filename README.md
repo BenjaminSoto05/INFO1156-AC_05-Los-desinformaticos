@@ -28,7 +28,7 @@ La solución está construida con NestJS en backend, Prisma ORM y SQLite como al
 
 La base de datos es fija en `sqlite.db`
 
-## Ejecución:
+## Ejecución
 
 Para levantar todo el sistema con Docker:
 
